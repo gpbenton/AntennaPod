@@ -247,47 +247,59 @@ public class GpodnetSyncService extends Service {
         // make sure more recent local actions are not overwritten by older remote actions
         Map<Pair<String, String>, GpodnetEpisodeAction> mostRecentPlayAction = new ArrayMap<>();
         for (GpodnetEpisodeAction action : remoteActions) {
-            switch (action.getAction()) {
-                case NEW:
-                    FeedItem newItem = DBReader.getFeedItem(action.getPodcast(), action.getEpisode());
-                    if(newItem != null) {
-                        DBWriter.markItemPlayed(newItem, FeedItem.UNPLAYED, true);
-                    } else {
-                        Log.i(TAG, "Unknown feed item: " + action);
-                    }
-                    break;
-                case DOWNLOAD:
-                    break;
-                case PLAY:
-                    Pair<String, String> key = new Pair<>(action.getPodcast(), action.getEpisode());
-                    GpodnetEpisodeAction localMostRecent = localMostRecentPlayAction.get(key);
-                    if(localMostRecent == null ||
-                            localMostRecent.getTimestamp() == null ||
-                            localMostRecent.getTimestamp().before(action.getTimestamp())) {
-                        GpodnetEpisodeAction mostRecent = mostRecentPlayAction.get(key);
-                        if (mostRecent == null || mostRecent.getTimestamp() == null) {
-                            mostRecentPlayAction.put(key, action);
-                        } else if (action.getTimestamp() != null && mostRecent.getTimestamp().before(action.getTimestamp())) {
-                            mostRecentPlayAction.put(key, action);
-                        } else {
-                            Log.d(TAG, "No date information in action, skipping it");
-                        }
-                    }
-                    break;
-                case DELETE:
-                    // NEVER EVER call DBWriter.deleteFeedMediaOfItem() here, leads to an infinite loop
-                    break;
+            Pair<String, String> key = new Pair<>(action.getPodcast(), action.getEpisode());
+            GpodnetEpisodeAction localMostRecent = localMostRecentPlayAction.get(key);
+            if(localMostRecent == null ||
+                    localMostRecent.getTimestamp() == null ||
+                    localMostRecent.getTimestamp().before(action.getTimestamp())) {
+                GpodnetEpisodeAction mostRecent = mostRecentPlayAction.get(key);
+                if (mostRecent == null || mostRecent.getTimestamp() == null) {
+                    mostRecentPlayAction.put(key, action);
+                    Log.d(TAG, "Adding most recent action 1: " + action.writeToString());
+                } else if (action.getTimestamp() != null && mostRecent.getTimestamp().before(action.getTimestamp())) {
+                    mostRecentPlayAction.put(key, action);
+                    Log.d(TAG, "Adding most recent action 2: " + action.writeToString());
+                } else {
+                    Log.d(TAG, "Old action, skipping it");
+
+                }
             }
         }
         for (GpodnetEpisodeAction action : mostRecentPlayAction.values()) {
             FeedItem playItem = DBReader.getFeedItem(action.getPodcast(), action.getEpisode());
             if (playItem != null) {
-                FeedMedia media = playItem.getMedia();
-                media.setPosition(action.getPosition() * 1000);
-                DBWriter.setFeedMedia(media);
-                if(playItem.getMedia().hasAlmostEnded()) {
-                    DBWriter.markItemPlayed(playItem, FeedItem.PLAYED, true);
-                    DBWriter.addItemToPlaybackHistory(playItem.getMedia());
+                switch (action.getAction()) {
+                    case PLAY:
+                        Log.d(TAG, "Handling PLAY for " + action.writeToString());
+                        if (action.getPosition() == -1) {
+                            Log.d(TAG, "Marking Played");
+                            DBWriter.markItemPlayed(playItem, FeedItem.PLAYED, true);
+                            DBWriter.addItemToPlaybackHistory(playItem.getMedia());
+                        } else {
+                            FeedMedia media = playItem.getMedia();
+                            media.setPosition(action.getPosition() * 1000);
+                            DBWriter.setFeedMedia(media);
+                            if (media.hasAlmostEnded()) {
+                                Log.d(TAG, "Marking Played");
+                                DBWriter.markItemPlayed(playItem, FeedItem.PLAYED, true);
+                                DBWriter.addItemToPlaybackHistory(playItem.getMedia());
+                            }
+                        }
+                        break;
+
+                    case DELETE:
+                        // NEVER EVER call DBWriter.deleteFeedMediaOfItem() here, leads to an infinite loop
+                        Log.d(TAG, "Handling DELETE for " + action.writeToString());
+                        DBWriter.markItemPlayed(playItem, FeedItem.PLAYED, true);
+                        break;
+
+                    case NEW:
+                    case DOWNLOAD:
+                        Log.d(TAG, "Handling NEW/DOWNLOAD for " + action.writeToString());
+                        DBWriter.markItemPlayed(playItem, FeedItem.UNPLAYED, true);
+                        break;
+
+
                 }
             }
         }
