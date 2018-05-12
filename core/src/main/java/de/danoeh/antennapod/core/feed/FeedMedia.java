@@ -34,7 +34,7 @@ public class FeedMedia extends FeedFile implements Playable {
     public static final int PLAYABLE_TYPE_FEEDMEDIA = 1;
 
     public static final String PREF_MEDIA_ID = "FeedMedia.PrefMediaId";
-    public static final String PREF_FEED_ID = "FeedMedia.PrefFeedId";
+    private static final String PREF_FEED_ID = "FeedMedia.PrefFeedId";
 
     /**
      * Indicates we've checked on the size of the item via the network
@@ -88,10 +88,10 @@ public class FeedMedia extends FeedFile implements Playable {
         this.lastPlayedTime = lastPlayedTime;
     }
 
-    public FeedMedia(long id, FeedItem item, int duration, int position,
-                     long size, String mime_type, String file_url, String download_url,
-                     boolean downloaded, Date playbackCompletionDate, int played_duration,
-                     Boolean hasEmbeddedPicture, long lastPlayedTime) {
+    private FeedMedia(long id, FeedItem item, int duration, int position,
+                      long size, String mime_type, String file_url, String download_url,
+                      boolean downloaded, Date playbackCompletionDate, int played_duration,
+                      Boolean hasEmbeddedPicture, long lastPlayedTime) {
         this(id, item, duration, position, size, mime_type, file_url, download_url, downloaded,
                 playbackCompletionDate, played_duration, lastPlayedTime);
         this.hasEmbeddedPicture = hasEmbeddedPicture;
@@ -389,16 +389,19 @@ public class FeedMedia extends FeedFile implements Playable {
         if (item == null && itemID != 0) {
             item = DBReader.getFeedItem(itemID);
         }
+        if (item == null || item.getChapters() != null) {
+            return;
+        }
         // check if chapters are stored in db and not loaded yet.
-        if (item != null && item.hasChapters() && item.getChapters() == null) {
+        if (item.hasChapters()) {
             DBReader.loadChaptersOfFeedItem(item);
-        } else if (item != null && item.getChapters() == null) {
+        } else {
             if(localFileAvailable()) {
                 ChapterUtils.loadChaptersFromFileUrl(this);
             } else {
                 ChapterUtils.loadChaptersFromStreamUrl(this);
             }
-            if (getChapters() != null && item != null) {
+            if (item.getChapters() != null) {
                 DBWriter.setFeedItem(item);
             }
         }
@@ -551,15 +554,9 @@ public class FeedMedia extends FeedFile implements Playable {
     public Callable<String> loadShownotes() {
         return () -> {
             if (item == null) {
-                item = DBReader.getFeedItem(
-                        itemID);
+                item = DBReader.getFeedItem(itemID);
             }
-            if (item.getContentEncoded() == null || item.getDescription() == null) {
-                DBReader.loadExtraInformationOfFeedItem(
-                        item);
-
-            }
-            return (item.getContentEncoded() != null) ? item.getContentEncoded() : item.getDescription();
+            return item.loadShownotes().call();
         };
     }
 

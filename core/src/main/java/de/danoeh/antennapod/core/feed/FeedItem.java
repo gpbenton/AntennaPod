@@ -3,6 +3,7 @@ package de.danoeh.antennapod.core.feed;
 import android.database.Cursor;
 import android.support.annotation.Nullable;
 
+import android.text.TextUtils;
 import org.apache.commons.lang3.builder.ToStringBuilder;
 import org.apache.commons.lang3.builder.ToStringStyle;
 
@@ -59,7 +60,7 @@ public class FeedItem extends FeedComponent implements ShownotesProvider, Flattr
     public static final int PLAYED = 1;
 
     private String paymentLink;
-    private FlattrStatus flattrStatus;
+    private final FlattrStatus flattrStatus;
 
     /**
      * Is true if the database contains any chapters that belong to this item. This attribute is only
@@ -87,7 +88,7 @@ public class FeedItem extends FeedComponent implements ShownotesProvider, Flattr
     /**
      * Any tags assigned to this item
      */
-    private Set<String> tags = new HashSet<>();
+    private final Set<String> tags = new HashSet<>();
 
     public FeedItem() {
         this.state = UNPLAYED;
@@ -159,7 +160,6 @@ public class FeedItem extends FeedComponent implements ShownotesProvider, Flattr
         int indexAutoDownload = cursor.getColumnIndex(PodDBAdapter.KEY_AUTO_DOWNLOAD);
 
         long id = cursor.getInt(indexId);
-        assert(id > 0);
         String title = cursor.getString(indexTitle);
         String link = cursor.getString(indexLink);
         Date pubDate = new Date(cursor.getLong(indexPubDate));
@@ -373,7 +373,15 @@ public class FeedItem extends FeedComponent implements ShownotesProvider, Flattr
             if (contentEncoded == null || description == null) {
                 DBReader.loadExtraInformationOfFeedItem(FeedItem.this);
             }
-            return (contentEncoded != null) ? contentEncoded : description;
+            if (TextUtils.isEmpty(contentEncoded)) {
+                return description;
+            } else if (TextUtils.isEmpty(description)) {
+                return contentEncoded;
+            } else if (description.length() > 1.25 * contentEncoded.length()) {
+                return description;
+            } else {
+                return contentEncoded;
+            }
         };
     }
 

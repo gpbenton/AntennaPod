@@ -7,8 +7,6 @@ import android.content.SharedPreferences;
 import android.preference.PreferenceManager;
 import android.util.Log;
 
-import de.danoeh.antennapod.core.R;
-import de.danoeh.antennapod.core.event.MessageEvent;
 import org.shredzone.flattr4j.model.Flattr;
 
 import java.io.File;
@@ -25,9 +23,11 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 
 import de.danoeh.antennapod.core.ClientConfig;
+import de.danoeh.antennapod.core.R;
 import de.danoeh.antennapod.core.asynctask.FlattrClickWorker;
 import de.danoeh.antennapod.core.event.FavoritesEvent;
 import de.danoeh.antennapod.core.event.FeedItemEvent;
+import de.danoeh.antennapod.core.event.MessageEvent;
 import de.danoeh.antennapod.core.event.QueueEvent;
 import de.danoeh.antennapod.core.feed.EventDistributor;
 import de.danoeh.antennapod.core.feed.Feed;
@@ -43,6 +43,7 @@ import de.danoeh.antennapod.core.preferences.UserPreferences;
 import de.danoeh.antennapod.core.service.download.DownloadStatus;
 import de.danoeh.antennapod.core.service.playback.PlaybackService;
 import de.danoeh.antennapod.core.util.LongList;
+import de.danoeh.antennapod.core.util.Permutor;
 import de.danoeh.antennapod.core.util.flattr.FlattrStatus;
 import de.danoeh.antennapod.core.util.flattr.FlattrThing;
 import de.danoeh.antennapod.core.util.flattr.SimpleFlattrThing;
@@ -186,6 +187,9 @@ public class DBWriter {
                 for (FeedItem item : feed.getItems()) {
                     if(queue.remove(item)) {
                         removed.add(item);
+                    }
+                    if (item.getState() == FeedItem.State.PLAYING && PlaybackService.isRunning) {
+                        context.stopService(new Intent(context, PlaybackService.class));
                     }
                     if (item.getMedia() != null
                             && item.getMedia().isDownloaded()) {
@@ -382,8 +386,8 @@ public class DBWriter {
                                 // add item to either front ot back of queue
                                 boolean addToFront = UserPreferences.enqueueAtFront();
                                 if (addToFront) {
-                                    queue.add(0 + i, item);
-                                    events.add(QueueEvent.added(item, 0 + i));
+                                    queue.add(i, item);
+                                    events.add(QueueEvent.added(item, i));
                                 } else {
                                     queue.add(item);
                                     events.add(QueueEvent.added(item, queue.size() - 1));
@@ -838,9 +842,9 @@ public class DBWriter {
      *
      * @param startFlattrClickWorker true if FlattrClickWorker should be started after the FlattrStatus has been saved
      */
-    public static Future<?> setFeedItemFlattrStatus(final Context context,
-                                                    final FeedItem item,
-                                                    final boolean startFlattrClickWorker) {
+    private static Future<?> setFeedItemFlattrStatus(final Context context,
+                                                     final FeedItem item,
+                                                     final boolean startFlattrClickWorker) {
         return dbExec.submit(() -> {
             PodDBAdapter adapter = PodDBAdapter.getInstance();
             adapter.open();
@@ -986,6 +990,32 @@ public class DBWriter {
                 }
             } else {
                 Log.e(TAG, "sortQueue: Could not load queue");
+            }
+            adapter.close();
+        });
+    }
+
+    /**
+     * Similar to sortQueue, but allows more complex reordering by providing whole-queue context.
+     * @param permutor        Encapsulates whole-Queue reordering logic.
+     * @param broadcastUpdate <code>true</code> if this operation should trigger a
+     *                        QueueUpdateBroadcast. This option should be set to <code>false</code>
+     *                        if the caller wants to avoid unexpected updates of the GUI.
+     */
+    public static Future<?> reorderQueue(final Permutor<FeedItem> permutor, final boolean broadcastUpdate) {
+        return dbExec.submit(() -> {
+            final PodDBAdapter adapter = PodDBAdapter.getInstance();
+            adapter.open();
+            final List<FeedItem> queue = DBReader.getQueue(adapter);
+
+            if (queue != null) {
+                permutor.reorder(queue);
+                adapter.setQueue(queue);
+                if (broadcastUpdate) {
+                    EventBus.getDefault().post(QueueEvent.sorted(queue));
+                }
+            } else {
+                Log.e(TAG, "reorderQueue: Could not load queue");
             }
             adapter.close();
         });

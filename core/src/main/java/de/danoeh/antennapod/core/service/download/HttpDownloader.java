@@ -93,7 +93,7 @@ public class HttpDownloader extends Downloader {
 
 
             // add range header if necessary
-            if (fileExists) {
+            if (fileExists && destination.length() > 0) {
                 request.setSoFar(destination.length());
                 httpReq.addHeader("Range", "bytes=" + request.getSoFar() + "-");
                 Log.d(TAG, "Adding range header: " + request.getSoFar());
@@ -314,9 +314,9 @@ public class HttpDownloader extends Downloader {
         }
     }
 
-    private class BasicAuthorizationInterceptor implements Interceptor {
+    private static class BasicAuthorizationInterceptor implements Interceptor {
 
-        private DownloadRequest downloadRequest;
+        private final DownloadRequest downloadRequest;
 
         public BasicAuthorizationInterceptor(DownloadRequest downloadRequest) {
             this.downloadRequest = downloadRequest;

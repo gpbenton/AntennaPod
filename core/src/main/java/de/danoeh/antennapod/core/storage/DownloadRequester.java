@@ -33,8 +33,8 @@ public class DownloadRequester {
     private static final String TAG = "DownloadRequester";
 
     public static final String IMAGE_DOWNLOADPATH = "images/";
-    public static final String FEED_DOWNLOADPATH = "cache/";
-    public static final String MEDIA_DOWNLOADPATH = "media/";
+    private static final String FEED_DOWNLOADPATH = "cache/";
+    private static final String MEDIA_DOWNLOADPATH = "media/";
 
     /**
      * Denotes the page of the feed that is contained in the DownloadRequest sent by the DownloadRequester.
@@ -48,7 +48,7 @@ public class DownloadRequester {
 
     private static DownloadRequester downloader;
 
-    private Map<String, DownloadRequest> downloads;
+    private final Map<String, DownloadRequest> downloads;
 
     private DownloadRequester() {
         downloads = new ConcurrentHashMap<>();
@@ -89,7 +89,9 @@ public class DownloadRequester {
     private void download(Context context, FeedFile item, FeedFile container, File dest,
                           boolean overwriteIfExists, String username, String password,
                           String lastModified, boolean deleteOnFailure, Bundle arguments) {
-        final boolean partiallyDownloadedFileExists = item.getFile_url() != null;
+        final boolean partiallyDownloadedFileExists = item.getFile_url() != null && new File(item.getFile_url()).exists();
+
+        Log.d(TAG, "partiallyDownloadedFileExists: " + partiallyDownloadedFileExists);
         if (isDownloadingFile(item)) {
                 Log.e(TAG, "URL " + item.getDownload_url()
                         + " is already being downloaded");
@@ -303,13 +305,13 @@ public class DownloadRequester {
         return downloads.size();
     }
 
-    public synchronized String getFeedfilePath(Context context)
+    private synchronized String getFeedfilePath(Context context)
             throws DownloadRequestException {
         return getExternalFilesDirOrThrowException(context, FEED_DOWNLOADPATH)
                 .toString() + "/";
     }
 
-    public synchronized String getFeedfileName(Feed feed) {
+    private synchronized String getFeedfileName(Feed feed) {
         String filename = feed.getDownload_url();
         if (feed.getTitle() != null && !feed.getTitle().isEmpty()) {
             filename = feed.getTitle();
@@ -317,7 +319,7 @@ public class DownloadRequester {
         return "feed-" + FileNameGenerator.generateFileName(filename);
     }
 
-    public synchronized String getMediafilePath(Context context, FeedMedia media)
+    private synchronized String getMediafilePath(Context context, FeedMedia media)
             throws DownloadRequestException {
         File externalStorage = getExternalFilesDirOrThrowException(
                 context,

@@ -3,24 +3,24 @@ package de.danoeh.antennapod.core.storage;
 import android.content.ContentValues;
 import android.content.Context;
 import android.database.Cursor;
+import android.database.DatabaseErrorHandler;
 import android.database.DatabaseUtils;
+import android.database.DefaultDatabaseErrorHandler;
 import android.database.MergeCursor;
 import android.database.SQLException;
 import android.database.sqlite.SQLiteDatabase;
 import android.database.sqlite.SQLiteDatabase.CursorFactory;
 import android.database.sqlite.SQLiteOpenHelper;
 import android.media.MediaMetadataRetriever;
-import android.os.Build;
 import android.text.TextUtils;
 import android.util.Log;
 
+import java.io.File;
+import java.io.IOException;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import java.util.Set;
-import java.util.concurrent.atomic.AtomicInteger;
-import java.util.concurrent.locks.Lock;
-import java.util.concurrent.locks.ReentrantLock;
 
 import de.danoeh.antennapod.core.R;
 import de.danoeh.antennapod.core.event.ProgressEvent;
@@ -36,6 +36,7 @@ import de.danoeh.antennapod.core.service.download.DownloadStatus;
 import de.danoeh.antennapod.core.util.LongIntMap;
 import de.danoeh.antennapod.core.util.flattr.FlattrStatus;
 import de.greenrobot.event.EventBus;
+import org.apache.commons.io.FileUtils;
 
 // TODO Remove media column from feeditem table
 
@@ -45,7 +46,7 @@ import de.greenrobot.event.EventBus;
 public class PodDBAdapter {
 
     private static final String TAG = "PodDBAdapter";
-    private static final String DATABASE_NAME = "Antennapod.db";
+    public static final String DATABASE_NAME = "Antennapod.db";
 
     /**
      * Maximum number of arguments for IN-operator.
@@ -74,7 +75,7 @@ public class PodDBAdapter {
     public static final String KEY_MIME_TYPE = "mime_type";
     public static final String KEY_IMAGE = "image";
     public static final String KEY_FEED = "feed";
-    public static final String KEY_MEDIA = "media";
+    private static final String KEY_MEDIA = "media";
     public static final String KEY_DOWNLOADED = "downloaded";
     public static final String KEY_LASTUPDATE = "last_update";
     public static final String KEY_FEEDFILE = "feedfile";
@@ -126,7 +127,7 @@ public class PodDBAdapter {
     private static final String TABLE_PRIMARY_KEY = KEY_ID
             + " INTEGER PRIMARY KEY AUTOINCREMENT ,";
 
-    public static final String CREATE_TABLE_FEEDS = "CREATE TABLE "
+    private static final String CREATE_TABLE_FEEDS = "CREATE TABLE "
             + TABLE_NAME_FEEDS + " (" + TABLE_PRIMARY_KEY + KEY_TITLE
             + " TEXT," + KEY_CUSTOM_TITLE + " TEXT," + KEY_FILE_URL + " TEXT," + KEY_DOWNLOAD_URL + " TEXT,"
             + KEY_DOWNLOADED + " INTEGER," + KEY_LINK + " TEXT,"
@@ -146,7 +147,7 @@ public class PodDBAdapter {
             + KEY_LAST_UPDATE_FAILED + " INTEGER DEFAULT 0,"
             + KEY_AUTO_DELETE_ACTION + " INTEGER DEFAULT 0)";
 
-    public static final String CREATE_TABLE_FEED_ITEMS = "CREATE TABLE "
+    private static final String CREATE_TABLE_FEED_ITEMS = "CREATE TABLE "
             + TABLE_NAME_FEED_ITEMS + " (" + TABLE_PRIMARY_KEY + KEY_TITLE
             + " TEXT," + KEY_CONTENT_ENCODED + " TEXT," + KEY_PUBDATE
             + " INTEGER," + KEY_READ + " INTEGER," + KEY_LINK + " TEXT,"
@@ -157,12 +158,12 @@ public class PodDBAdapter {
             + KEY_IMAGE + " INTEGER,"
             + KEY_AUTO_DOWNLOAD + " INTEGER)";
 
-    public static final String CREATE_TABLE_FEED_IMAGES = "CREATE TABLE "
+    private static final String CREATE_TABLE_FEED_IMAGES = "CREATE TABLE "
             + TABLE_NAME_FEED_IMAGES + " (" + TABLE_PRIMARY_KEY + KEY_TITLE
             + " TEXT," + KEY_FILE_URL + " TEXT," + KEY_DOWNLOAD_URL + " TEXT,"
             + KEY_DOWNLOADED + " INTEGER)";
 
-    public static final String CREATE_TABLE_FEED_MEDIA = "CREATE TABLE "
+    private static final String CREATE_TABLE_FEED_MEDIA = "CREATE TABLE "
             + TABLE_NAME_FEED_MEDIA + " (" + TABLE_PRIMARY_KEY + KEY_DURATION
             + " INTEGER," + KEY_FILE_URL + " TEXT," + KEY_DOWNLOAD_URL
             + " TEXT," + KEY_DOWNLOADED + " INTEGER," + KEY_POSITION
@@ -173,53 +174,53 @@ public class PodDBAdapter {
             + KEY_HAS_EMBEDDED_PICTURE + " INTEGER,"
             + KEY_LAST_PLAYED_TIME + " INTEGER)";
 
-    public static final String CREATE_TABLE_DOWNLOAD_LOG = "CREATE TABLE "
+    private static final String CREATE_TABLE_DOWNLOAD_LOG = "CREATE TABLE "
             + TABLE_NAME_DOWNLOAD_LOG + " (" + TABLE_PRIMARY_KEY + KEY_FEEDFILE
             + " INTEGER," + KEY_FEEDFILETYPE + " INTEGER," + KEY_REASON
             + " INTEGER," + KEY_SUCCESSFUL + " INTEGER," + KEY_COMPLETION_DATE
             + " INTEGER," + KEY_REASON_DETAILED + " TEXT,"
             + KEY_DOWNLOADSTATUS_TITLE + " TEXT)";
 
-    public static final String CREATE_TABLE_QUEUE = "CREATE TABLE "
+    private static final String CREATE_TABLE_QUEUE = "CREATE TABLE "
             + TABLE_NAME_QUEUE + "(" + KEY_ID + " INTEGER PRIMARY KEY,"
             + KEY_FEEDITEM + " INTEGER," + KEY_FEED + " INTEGER)";
 
-    public static final String CREATE_TABLE_SIMPLECHAPTERS = "CREATE TABLE "
+    private static final String CREATE_TABLE_SIMPLECHAPTERS = "CREATE TABLE "
             + TABLE_NAME_SIMPLECHAPTERS + " (" + TABLE_PRIMARY_KEY + KEY_TITLE
             + " TEXT," + KEY_START + " INTEGER," + KEY_FEEDITEM + " INTEGER,"
             + KEY_LINK + " TEXT," + KEY_CHAPTER_TYPE + " INTEGER)";
 
     // SQL Statements for creating indexes
-    public static final String CREATE_INDEX_FEEDITEMS_FEED = "CREATE INDEX "
+    private static final String CREATE_INDEX_FEEDITEMS_FEED = "CREATE INDEX "
             + TABLE_NAME_FEED_ITEMS + "_" + KEY_FEED + " ON " + TABLE_NAME_FEED_ITEMS + " ("
             + KEY_FEED + ")";
 
-    public static final String CREATE_INDEX_FEEDITEMS_IMAGE = "CREATE INDEX "
+    private static final String CREATE_INDEX_FEEDITEMS_IMAGE = "CREATE INDEX "
             + TABLE_NAME_FEED_ITEMS + "_" + KEY_IMAGE + " ON " + TABLE_NAME_FEED_ITEMS + " ("
             + KEY_IMAGE + ")";
 
-    public static final String CREATE_INDEX_FEEDITEMS_PUBDATE = "CREATE INDEX IF NOT EXISTS "
+    private static final String CREATE_INDEX_FEEDITEMS_PUBDATE = "CREATE INDEX IF NOT EXISTS "
             + TABLE_NAME_FEED_ITEMS + "_" + KEY_PUBDATE + " ON " + TABLE_NAME_FEED_ITEMS + " ("
             + KEY_PUBDATE + ")";
 
-    public static final String CREATE_INDEX_FEEDITEMS_READ = "CREATE INDEX IF NOT EXISTS "
+    private static final String CREATE_INDEX_FEEDITEMS_READ = "CREATE INDEX IF NOT EXISTS "
             + TABLE_NAME_FEED_ITEMS + "_" + KEY_READ + " ON " + TABLE_NAME_FEED_ITEMS + " ("
             + KEY_READ + ")";
 
 
-    public static final String CREATE_INDEX_QUEUE_FEEDITEM = "CREATE INDEX "
+    private static final String CREATE_INDEX_QUEUE_FEEDITEM = "CREATE INDEX "
             + TABLE_NAME_QUEUE + "_" + KEY_FEEDITEM + " ON " + TABLE_NAME_QUEUE + " ("
             + KEY_FEEDITEM + ")";
 
-    public static final String CREATE_INDEX_FEEDMEDIA_FEEDITEM = "CREATE INDEX "
+    private static final String CREATE_INDEX_FEEDMEDIA_FEEDITEM = "CREATE INDEX "
             + TABLE_NAME_FEED_MEDIA + "_" + KEY_FEEDITEM + " ON " + TABLE_NAME_FEED_MEDIA + " ("
             + KEY_FEEDITEM + ")";
 
-    public static final String CREATE_INDEX_SIMPLECHAPTERS_FEEDITEM = "CREATE INDEX "
+    private static final String CREATE_INDEX_SIMPLECHAPTERS_FEEDITEM = "CREATE INDEX "
             + TABLE_NAME_SIMPLECHAPTERS + "_" + KEY_FEEDITEM + " ON " + TABLE_NAME_SIMPLECHAPTERS + " ("
             + KEY_FEEDITEM + ")";
 
-    public static final String CREATE_TABLE_FAVORITES = "CREATE TABLE "
+    private static final String CREATE_TABLE_FAVORITES = "CREATE TABLE "
             + TABLE_NAME_FAVORITES + "(" + KEY_ID + " INTEGER PRIMARY KEY,"
             + KEY_FEEDITEM + " INTEGER," + KEY_FEED + " INTEGER)";
 
@@ -307,72 +308,57 @@ public class PodDBAdapter {
             KEY_CONTENT_ENCODED, KEY_FEED};
 
     private static Context context;
-    private static PodDBHelper dbHelper;
 
     private static volatile SQLiteDatabase db;
-    private static Lock dbLock = new ReentrantLock();
-    private static AtomicInteger counter = new AtomicInteger(0);
+    private static int counter = 0;
 
     public static void init(Context context) {
         PodDBAdapter.context = context.getApplicationContext();
     }
 
-    private static class PodDBHelperholder {
-        public static final PodDBHelper dbHelper = new PodDBHelper(PodDBAdapter.context, DATABASE_NAME, null);
+    // Bill Pugh Singleton Implementation
+    private static class SingletonHolder {
+        private static final PodDBHelper dbHelper = new PodDBHelper(PodDBAdapter.context, DATABASE_NAME, null);
+        private static final PodDBAdapter dbAdapter = new PodDBAdapter();
     }
 
     public static PodDBAdapter getInstance() {
-        dbHelper = PodDBHelperholder.dbHelper;
-        return new PodDBAdapter();
+        return SingletonHolder.dbAdapter;
     }
 
     private PodDBAdapter() {
     }
 
-    public PodDBAdapter open() {
-        int adapters = counter.incrementAndGet();
-        Log.v(TAG, "Opening DB #" + adapters);
+    public synchronized PodDBAdapter open() {
+        counter++;
+        Log.v(TAG, "Opening DB #" + counter);
 
-        if ((db == null) || (!db.isOpen()) || (db.isReadOnly())) {
-            try {
-                dbLock.lock();
-                if ((db == null) || (!db.isOpen()) || (db.isReadOnly())) {
-                    db = openDb();
-                }
-            } finally {
-                dbLock.unlock();
-            }
+        if (db == null || !db.isOpen() || db.isReadOnly()) {
+            db = openDb();
         }
         return this;
     }
 
     private SQLiteDatabase openDb() {
-        SQLiteDatabase newDb = null;
+        SQLiteDatabase newDb;
         try {
-            newDb = dbHelper.getWritableDatabase();
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.HONEYCOMB) {
-                newDb.enableWriteAheadLogging();
-            }
+            newDb = SingletonHolder.dbHelper.getWritableDatabase();
+            newDb.enableWriteAheadLogging();
         } catch (SQLException ex) {
             Log.e(TAG, Log.getStackTraceString(ex));
-            newDb = dbHelper.getReadableDatabase();
+            newDb = SingletonHolder.dbHelper.getReadableDatabase();
         }
         return newDb;
     }
 
-    public void close() {
-        int adapters = counter.decrementAndGet();
-        Log.v(TAG, "Closing DB #" + adapters);
+    public synchronized void close() {
+        counter--;
+        Log.v(TAG, "Closing DB #" + counter);
 
-        if (adapters == 0) {
+        if (counter == 0) {
             Log.v(TAG, "Closing DB, really");
-            try {
-                dbLock.lock();
-                db.close();
-                db = null;
-            } finally {
-                dbLock.unlock();
-            }
+            db.close();
+            db = null;
         }
     }
 
@@ -394,7 +380,7 @@ public class PodDBAdapter {
      *
      * @return the id of the entry
      */
-    public long setFeed(Feed feed) {
+    private long setFeed(Feed feed) {
         ContentValues values = new ContentValues();
         values.put(KEY_TITLE, feed.getFeedTitle());
         values.put(KEY_LINK, feed.getLink());
@@ -473,11 +459,7 @@ public class PodDBAdapter {
 
         try {
             if (!db.inTransaction()) {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.HONEYCOMB) {
-                    db.beginTransactionNonExclusive();
-                } else {
-                    db.beginTransaction();
-                }
+                db.beginTransactionNonExclusive();
                 startedTransaction = true;
             }
 
@@ -580,11 +562,7 @@ public class PodDBAdapter {
      */
     public void setCompleteFeed(Feed... feeds) {
         try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.HONEYCOMB) {
-                db.beginTransactionNonExclusive();
-            } else {
-                db.beginTransaction();
-            }
+            db.beginTransactionNonExclusive();
             for (Feed feed : feeds) {
                 setFeed(feed);
                 if (feed.getItems() != null) {
@@ -665,11 +643,7 @@ public class PodDBAdapter {
 
     public void setFeedItemlist(List<FeedItem> items) {
         try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.HONEYCOMB) {
-                db.beginTransactionNonExclusive();
-            } else {
-                db.beginTransaction();
-            }
+            db.beginTransactionNonExclusive();
             for (FeedItem item : items) {
                 setFeedItem(item, true);
             }
@@ -684,11 +658,7 @@ public class PodDBAdapter {
     public long setSingleFeedItem(FeedItem item) {
         long result = 0;
         try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.HONEYCOMB) {
-                db.beginTransactionNonExclusive();
-            } else {
-                db.beginTransaction();
-            }
+            db.beginTransactionNonExclusive();
             result = setFeedItem(item, true);
             db.setTransactionSuccessful();
         } catch (SQLException e) {
@@ -814,11 +784,7 @@ public class PodDBAdapter {
     public void setFeedItemRead(int played, long itemId, long mediaId,
                                 boolean resetMediaPosition) {
         try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.HONEYCOMB) {
-                db.beginTransactionNonExclusive();
-            } else {
-                db.beginTransaction();
-            }
+            db.beginTransactionNonExclusive();
             ContentValues values = new ContentValues();
 
             values.put(KEY_READ, played);
@@ -846,11 +812,7 @@ public class PodDBAdapter {
      */
     public void setFeedItemRead(int read, long... itemIds) {
         try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.HONEYCOMB) {
-                db.beginTransactionNonExclusive();
-            } else {
-                db.beginTransaction();
-            }
+            db.beginTransactionNonExclusive();
             ContentValues values = new ContentValues();
             for (long id : itemIds) {
                 values.clear();
@@ -865,7 +827,7 @@ public class PodDBAdapter {
         }
     }
 
-    public void setChapters(FeedItem item) {
+    private void setChapters(FeedItem item) {
         ContentValues values = new ContentValues();
         for (Chapter chapter : item.getChapters()) {
             values.put(KEY_TITLE, chapter.getTitle());
@@ -933,11 +895,7 @@ public class PodDBAdapter {
     public void setFavorites(List<FeedItem> favorites) {
         ContentValues values = new ContentValues();
         try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.HONEYCOMB) {
-                db.beginTransactionNonExclusive();
-            } else {
-                db.beginTransaction();
-            }
+            db.beginTransactionNonExclusive();
             db.delete(TABLE_NAME_FAVORITES, null, null);
             for (int i = 0; i < favorites.size(); i++) {
                 FeedItem item = favorites.get(i);
@@ -977,7 +935,7 @@ public class PodDBAdapter {
         db.execSQL(deleteClause);
     }
 
-    public boolean isItemInFavorites(FeedItem item) {
+    private boolean isItemInFavorites(FeedItem item) {
         String query = String.format("SELECT %s from %s WHERE %s=%d",
                 KEY_ID, TABLE_NAME_FAVORITES, KEY_FEEDITEM, item.getId());
         Cursor c = db.rawQuery(query, null);
@@ -1000,11 +958,7 @@ public class PodDBAdapter {
     public void setQueue(List<FeedItem> queue) {
         ContentValues values = new ContentValues();
         try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.HONEYCOMB) {
-                db.beginTransactionNonExclusive();
-            } else {
-                db.beginTransaction();
-            }
+            db.beginTransactionNonExclusive();
             db.delete(TABLE_NAME_QUEUE, null, null);
             for (int i = 0; i < queue.size(); i++) {
                 FeedItem item = queue.get(i);
@@ -1025,7 +979,7 @@ public class PodDBAdapter {
         db.delete(TABLE_NAME_QUEUE, null, null);
     }
 
-    public void removeFeedMedia(FeedMedia media) {
+    private void removeFeedMedia(FeedMedia media) {
         // delete download log entries for feed media
         db.delete(TABLE_NAME_DOWNLOAD_LOG, KEY_FEEDFILE + "=? AND " + KEY_FEEDFILETYPE + "=?",
                 new String[]{String.valueOf(media.getId()), String.valueOf(FeedMedia.FEEDFILETYPE_FEEDMEDIA)});
@@ -1034,12 +988,12 @@ public class PodDBAdapter {
                 new String[]{String.valueOf(media.getId())});
     }
 
-    public void removeChaptersOfItem(FeedItem item) {
+    private void removeChaptersOfItem(FeedItem item) {
         db.delete(TABLE_NAME_SIMPLECHAPTERS, KEY_FEEDITEM + "=?",
                 new String[]{String.valueOf(item.getId())});
     }
 
-    public void removeFeedImage(FeedImage image) {
+    private void removeFeedImage(FeedImage image) {
         db.delete(TABLE_NAME_FEED_IMAGES, KEY_ID + "=?",
                 new String[]{String.valueOf(image.getId())});
     }
@@ -1047,7 +1001,7 @@ public class PodDBAdapter {
     /**
      * Remove a FeedItem and its FeedMedia entry.
      */
-    public void removeFeedItem(FeedItem item) {
+    private void removeFeedItem(FeedItem item) {
         if (item.getMedia() != null) {
             removeFeedMedia(item.getMedia());
         }
@@ -1066,11 +1020,7 @@ public class PodDBAdapter {
      */
     public void removeFeed(Feed feed) {
         try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.HONEYCOMB) {
-                db.beginTransactionNonExclusive();
-            } else {
-                db.beginTransaction();
-            }
+            db.beginTransactionNonExclusive();
             if (feed.getImage() != null) {
                 removeFeedImage(feed.getImage());
             }
@@ -1127,7 +1077,7 @@ public class PodDBAdapter {
         return getAllItemsOfFeedCursor(feed.getId());
     }
 
-    public final Cursor getAllItemsOfFeedCursor(final long feedId) {
+    private Cursor getAllItemsOfFeedCursor(final long feedId) {
         return db.query(TABLE_NAME_FEED_ITEMS, FEEDITEM_SEL_FI_SMALL, KEY_FEED
                         + "=?", new String[]{String.valueOf(feedId)}, null, null,
                 null);
@@ -1370,11 +1320,7 @@ public class PodDBAdapter {
         if (size == 1) {
             return "(?)";
         }
-        StringBuilder builder =
-                new StringBuilder("(")
-                        .append(TextUtils.join(",", Collections.nCopies(size, "?")))
-                        .append(")");
-        return builder.toString();
+        return "(" + TextUtils.join(",", Collections.nCopies(size, "?")) + ")";
     }
 
     public final Cursor getFeedCursor(final long id) {
@@ -1700,13 +1646,35 @@ public class PodDBAdapter {
     }
 
     /**
+     * Called when a database corruption happens
+     */
+    public static class PodDbErrorHandler implements DatabaseErrorHandler {
+        @Override
+        public void onCorruption(SQLiteDatabase db) {
+            Log.e(TAG, "Database corrupted: " + db.getPath());
+
+            File dbPath = new File(db.getPath());
+            File backupFolder = PodDBAdapter.context.getExternalFilesDir(null);
+            File backupFile = new File(backupFolder, "CorruptedDatabaseBackup.db");
+            try {
+                FileUtils.copyFile(dbPath, backupFile);
+                Log.d(TAG, "Dumped database to " + backupFile.getPath());
+            } catch (IOException e) {
+                Log.d(TAG, Log.getStackTraceString(e));
+            }
+
+            new DefaultDatabaseErrorHandler().onCorruption(db); // This deletes the database
+        }
+    }
+
+    /**
      * Helper class for opening the Antennapod database.
      */
     private static class PodDBHelper extends SQLiteOpenHelper {
 
         private static final int VERSION = 1060200;
 
-        private Context context;
+        private final Context context;
 
         /**
          * Constructor.
@@ -1717,7 +1685,7 @@ public class PodDBAdapter {
          */
         public PodDBHelper(final Context context, final String name,
                            final CursorFactory factory) {
-            super(context, name, factory, VERSION);
+            super(context, name, factory, VERSION, new PodDbErrorHandler());
             this.context = context;
         }
 

@@ -109,7 +109,6 @@ public class QueueFragment extends Fragment {
     @Override
     public void onResume() {
         super.onResume();
-        recyclerView.setAdapter(recyclerAdapter);
         loadItems(true);
         EventDistributor.getInstance().register(contentUpdate);
         EventBus.getDefault().registerSticky(this);
@@ -328,6 +327,15 @@ public class QueueFragment extends Fragment {
                 case R.id.queue_sort_feed_title_desc:
                     QueueSorter.sort(getActivity(), QueueSorter.Rule.FEED_TITLE_DESC, true);
                     return true;
+                case R.id.queue_sort_random:
+                    QueueSorter.sort(getActivity(), QueueSorter.Rule.RANDOM, true);
+                    return true;
+                case R.id.queue_sort_smart_shuffle_asc:
+                    QueueSorter.sort(getActivity(), QueueSorter.Rule.SMART_SHUFFLE_ASC, true);
+                    return true;
+                case R.id.queue_sort_smart_shuffle_desc:
+                    QueueSorter.sort(getActivity(), QueueSorter.Rule.SMART_SHUFFLE_DESC, true);
+                    return true;
                 default:
                     return false;
             }
@@ -363,13 +371,7 @@ public class QueueFragment extends Fragment {
                 DBWriter.moveQueueItemToBottom(selectedItem.getId(), true);
                 return true;
             default:
-                try {
-                    return FeedItemMenuHandler.onMenuItemClicked(getActivity(), item.getItemId(), selectedItem);
-                } catch (DownloadRequestException e) {
-                    e.printStackTrace();
-                    Toast.makeText(getActivity(), e.getMessage(), Toast.LENGTH_LONG).show();
-                    return true;
-                }
+                return FeedItemMenuHandler.onMenuItemClicked(getActivity(), item.getItemId(), selectedItem);
         }
     }
 
@@ -395,17 +397,29 @@ public class QueueFragment extends Fragment {
         itemTouchHelper = new ItemTouchHelper(
             new ItemTouchHelper.SimpleCallback(ItemTouchHelper.UP | ItemTouchHelper.DOWN, ItemTouchHelper.RIGHT) {
 
+                // Position tracking whilst dragging
+                int dragFrom = -1;
+                int dragTo = -1;
+
                 @Override
                 public boolean onMove(RecyclerView recyclerView, RecyclerView.ViewHolder viewHolder, RecyclerView.ViewHolder target) {
+                    int fromPosition = viewHolder.getAdapterPosition();
+                    int toPosition = target.getAdapterPosition();
+
+                    // Update tracked position
+                    if(dragFrom == -1) {
+                        dragFrom =  fromPosition;
+                    }
+                    dragTo = toPosition;
+
                     int from = viewHolder.getAdapterPosition();
                     int to = target.getAdapterPosition();
-                    Log.d(TAG, "move(" + from + ", " + to + ")");
+                    Log.d(TAG, "move(" + from + ", " + to + ") in memory");
                     if(from >= queue.size() || to >= queue.size()) {
                         return false;
                     }
                     queue.add(to, queue.remove(from));
                     recyclerAdapter.notifyItemMoved(from, to);
-                    DBWriter.moveQueueItem(from, to, true);
                     return true;
                 }
 
@@ -459,11 +473,24 @@ public class QueueFragment extends Fragment {
                                       RecyclerView.ViewHolder viewHolder) {
                     super.clearView(recyclerView, viewHolder);
 
+                    // Check if drag finished
+                    if(dragFrom != -1 && dragTo != -1 && dragFrom != dragTo) {
+                        reallyMoved(dragFrom, dragTo);
+                    }
+
+                    dragFrom = dragTo = -1;
+
                     if (viewHolder instanceof QueueRecyclerAdapter.ItemTouchHelperViewHolder) {
                         QueueRecyclerAdapter.ItemTouchHelperViewHolder itemViewHolder =
                                 (QueueRecyclerAdapter.ItemTouchHelperViewHolder) viewHolder;
                         itemViewHolder.onItemClear();
                     }
+                }
+
+                private void reallyMoved(int from, int to) {
+                    // Write drag operation to database
+                    Log.d(TAG, "Write to database move(" + dragFrom + ", " + dragTo + ")");
+                    DBWriter.moveQueueItem(dragFrom, dragTo, true);
                 }
             }
         );
@@ -507,19 +534,20 @@ public class QueueFragment extends Fragment {
     private void refreshInfoBar() {
         String info = queue.size() + getString(R.string.episodes_suffix);
         if(queue.size() > 0) {
-            long duration = 0;
+            long timeLeft = 0;
             for(FeedItem item : queue) {
                 if(item.getMedia() != null) {
-                    duration += item.getMedia().getDuration();
+                    timeLeft += item.getMedia().getDuration() - item.getMedia().getPosition();
                 }
             }
             info += " \u2022 ";
-            info += Converter.getDurationStringLocalized(getActivity(), duration);
+            info += getString(R.string.time_left_label);
+            info += Converter.getDurationStringLocalized(getActivity(), timeLeft);
         }
         infoBar.setText(info);
     }
 
-    private QueueRecyclerAdapter.ItemAccess itemAccess = new QueueRecyclerAdapter.ItemAccess() {
+    private final QueueRecyclerAdapter.ItemAccess itemAccess = new QueueRecyclerAdapter.ItemAccess() {
         @Override
         public int getCount() {
             return queue != null ? queue.size() : 0;
@@ -579,7 +607,7 @@ public class QueueFragment extends Fragment {
         }
     };
 
-    private EventDistributor.EventListener contentUpdate = new EventDistributor.EventListener() {
+    private final EventDistributor.EventListener contentUpdate = new EventDistributor.EventListener() {
         @Override
         public void update(EventDistributor eventDistributor, Integer arg) {
             if ((arg & EVENTS) != 0) {
