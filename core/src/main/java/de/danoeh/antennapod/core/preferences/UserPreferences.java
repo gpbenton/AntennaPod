@@ -1,18 +1,21 @@
 package de.danoeh.antennapod.core.preferences;
 
-import android.app.AlarmManager;
-import android.app.PendingIntent;
 import android.content.Context;
-import android.content.Intent;
 import android.content.SharedPreferences;
-import android.os.SystemClock;
 import android.preference.PreferenceManager;
 import android.support.annotation.IntRange;
 import android.support.annotation.NonNull;
 import android.support.v4.app.NotificationCompat;
 import android.text.TextUtils;
 import android.util.Log;
-
+import de.danoeh.antennapod.core.R;
+import de.danoeh.antennapod.core.service.download.ProxyConfig;
+import de.danoeh.antennapod.core.storage.APCleanupAlgorithm;
+import de.danoeh.antennapod.core.storage.APNullCleanupAlgorithm;
+import de.danoeh.antennapod.core.storage.APQueueCleanupAlgorithm;
+import de.danoeh.antennapod.core.storage.EpisodeCleanupAlgorithm;
+import de.danoeh.antennapod.core.util.Converter;
+import de.danoeh.antennapod.core.util.download.AutoUpdateManager;
 import org.json.JSONArray;
 import org.json.JSONException;
 
@@ -21,18 +24,8 @@ import java.io.IOException;
 import java.net.Proxy;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Calendar;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
-
-import de.danoeh.antennapod.core.R;
-import de.danoeh.antennapod.core.receiver.FeedUpdateReceiver;
-import de.danoeh.antennapod.core.service.download.ProxyConfig;
-import de.danoeh.antennapod.core.storage.APCleanupAlgorithm;
-import de.danoeh.antennapod.core.storage.APNullCleanupAlgorithm;
-import de.danoeh.antennapod.core.storage.APQueueCleanupAlgorithm;
-import de.danoeh.antennapod.core.storage.EpisodeCleanupAlgorithm;
-import de.danoeh.antennapod.core.util.Converter;
 
 /**
  * Provides access to preferences set by the user in the settings screen. A
@@ -41,6 +34,7 @@ import de.danoeh.antennapod.core.util.Converter;
  * when called.
  */
 public class UserPreferences {
+    private UserPreferences(){}
 
     private static final String IMPORT_DIR = "import/";
 
@@ -51,7 +45,7 @@ public class UserPreferences {
     public static final String PREF_HIDDEN_DRAWER_ITEMS = "prefHiddenDrawerItems";
     private static final String PREF_DRAWER_FEED_ORDER = "prefDrawerFeedOrder";
     private static final String PREF_DRAWER_FEED_COUNTER = "prefDrawerFeedIndicator";
-    private static final String PREF_EXPANDED_NOTIFICATION = "prefExpandNotify";
+    public static final String PREF_EXPANDED_NOTIFICATION = "prefExpandNotify";
     private static final String PREF_PERSISTENT_NOTIFICATION = "prefPersistNotify";
     public static final String PREF_COMPACT_NOTIFICATION_BUTTONS = "prefCompactNotificationButtons";
     public static final String PREF_LOCKSCREEN_BACKGROUND = "prefLockscreenBackground";
@@ -74,6 +68,7 @@ public class UserPreferences {
     private static final String PREF_PLAYBACK_SPEED_ARRAY = "prefPlaybackSpeedArray";
     private static final String PREF_PAUSE_PLAYBACK_FOR_FOCUS_LOSS = "prefPauseForFocusLoss";
     private static final String PREF_RESUME_AFTER_CALL = "prefResumeAfterCall";
+    public static final String PREF_VIDEO_BEHAVIOR = "prefVideoBehavior";
 
     // Network
     private static final String PREF_ENQUEUE_DOWNLOADED = "prefEnqueueDownloaded";
@@ -85,7 +80,7 @@ public class UserPreferences {
     public static final String PREF_ENABLE_AUTODL = "prefEnableAutoDl";
     public static final String PREF_ENABLE_AUTODL_ON_BATTERY = "prefEnableAutoDownloadOnBattery";
     public static final String PREF_ENABLE_AUTODL_WIFI_FILTER = "prefEnableAutoDownloadWifiFilter";
-    private static final String PREF_ENABLE_AUTODL_ON_MOBILE = "prefEnableAutoDownloadOnMobile";
+    public static final String PREF_ENABLE_AUTODL_ON_MOBILE = "prefEnableAutoDownloadOnMobile";
     private static final String PREF_AUTODL_SELECTED_NETWORKS = "prefAutodownloadSelectedNetworks";
     private static final String PREF_PROXY_TYPE = "prefProxyType";
     private static final String PREF_PROXY_HOST = "prefProxyHost";
@@ -103,6 +98,7 @@ public class UserPreferences {
     public static final String PREF_IMAGE_CACHE_SIZE = "prefImageCacheSize";
 
     // Mediaplayer
+    public static final String PREF_MEDIA_PLAYER = "prefMediaPlayer";
     private static final String PREF_PLAYBACK_SPEED = "prefPlaybackSpeed";
     private static final String PREF_FAST_FORWARD_SECS = "prefFastForwardSecs";
     private static final String PREF_REWIND_SECS = "prefRewindSecs";
@@ -113,9 +109,7 @@ public class UserPreferences {
     private static final String PREF_RIGHT_VOLUME = "prefRightVolume";
 
     // Experimental
-    public static final String PREF_SONIC = "prefSonic";
     private static final String PREF_STEREO_TO_MONO = "PrefStereoToMono";
-    public static final String PREF_NORMALIZER = "prefNormalizer";
     public static final String PREF_CAST_ENABLED = "prefCast"; //Used for enabling Chromecast support
     public static final int EPISODE_CLEANUP_QUEUE = -1;
     public static final int EPISODE_CLEANUP_NULL = -2;
@@ -128,7 +122,6 @@ public class UserPreferences {
     private static final int EPISODE_CACHE_SIZE_UNLIMITED = -1;
     public static final int FEED_ORDER_COUNTER = 0;
     public static final int FEED_ORDER_ALPHABETICAL = 1;
-    public static final int FEED_ORDER_LAST_UPDATE = 2;
     public static final int FEED_ORDER_MOST_PLAYED = 3;
     public static final int FEED_COUNTER_SHOW_NEW_UNPLAYED_SUM = 0;
     public static final int FEED_COUNTER_SHOW_NEW = 1;
@@ -167,6 +160,8 @@ public class UserPreferences {
         int theme = getTheme();
         if (theme == R.style.Theme_AntennaPod_Dark) {
             return R.style.Theme_AntennaPod_Dark_NoTitle;
+        } else if (theme == R.style.Theme_AntennaPod_TrueBlack) {
+            return R.style.Theme_AntennaPod_TrueBlack_NoTitle;
         } else {
             return R.style.Theme_AntennaPod_Light_NoTitle;
         }
@@ -603,6 +598,8 @@ public class UserPreferences {
                 return R.style.Theme_AntennaPod_Light;
             case 1:
                 return R.style.Theme_AntennaPod_Dark;
+            case 2:
+                return R.style.Theme_AntennaPod_TrueBlack;
             default:
                 return R.style.Theme_AntennaPod_Light;
         }
@@ -642,13 +639,15 @@ public class UserPreferences {
     }
 
     public static boolean useSonic() {
-        return prefs.getBoolean(PREF_SONIC, false);
+        return prefs.getString(PREF_MEDIA_PLAYER, "sonic").equals("sonic");
     }
 
-    public static void enableSonic(boolean enable) {
-        prefs.edit()
-            .putBoolean(PREF_SONIC, enable)
-            .apply();
+    public static boolean useExoplayer() {
+        return prefs.getString(PREF_MEDIA_PLAYER, "sonic").equals("exoplayer");
+    }
+
+    public static void enableSonic() {
+        prefs.edit().putString(PREF_MEDIA_PLAYER, "sonic").apply();
     }
 
     public static boolean stereoToMono() {
@@ -661,6 +660,14 @@ public class UserPreferences {
                 .apply();
     }
 
+    public static VideoBackgroundBehavior getVideoBackgroundBehavior() {
+        switch (prefs.getString(PREF_VIDEO_BEHAVIOR, "stop")) {
+            case "stop": return VideoBackgroundBehavior.STOP;
+            case "pip": return VideoBackgroundBehavior.PICTURE_IN_PICTURE;
+            case "continue": return VideoBackgroundBehavior.CONTINUE_PLAYING;
+            default: return VideoBackgroundBehavior.STOP;
+        }
+    }
 
     public static EpisodeCleanupAlgorithm getEpisodeCleanupAlgorithm() {
         int cleanupValue = Integer.parseInt(prefs.getString(PREF_EPISODE_CLEANUP, "-1"));
@@ -772,58 +779,15 @@ public class UserPreferences {
         int[] timeOfDay = getUpdateTimeOfDay();
         Log.d(TAG, "timeOfDay: " + Arrays.toString(timeOfDay));
         if (timeOfDay.length == 2) {
-            restartUpdateTimeOfDayAlarm(timeOfDay[0], timeOfDay[1]);
+            AutoUpdateManager.restartUpdateTimeOfDayAlarm(context, timeOfDay[0], timeOfDay[1]);
         } else {
             long milliseconds = getUpdateInterval();
             long startTrigger = milliseconds;
             if (now) {
                 startTrigger = TimeUnit.SECONDS.toMillis(10);
             }
-            restartUpdateIntervalAlarm(startTrigger, milliseconds);
+            AutoUpdateManager.restartUpdateIntervalAlarm(context, startTrigger, milliseconds);
         }
-    }
-
-    /**
-     * Sets the interval in which the feeds are refreshed automatically
-     */
-    private static void restartUpdateIntervalAlarm(long triggerAtMillis, long intervalMillis) {
-        Log.d(TAG, "Restarting update alarm.");
-        AlarmManager alarmManager = (AlarmManager) context.getSystemService(Context.ALARM_SERVICE);
-        Intent intent = new Intent(context, FeedUpdateReceiver.class);
-        PendingIntent updateIntent = PendingIntent.getBroadcast(context, 0, intent, 0);
-        alarmManager.cancel(updateIntent);
-        if (intervalMillis > 0) {
-            alarmManager.set(AlarmManager.ELAPSED_REALTIME_WAKEUP,
-                    SystemClock.elapsedRealtime() + triggerAtMillis,
-                    updateIntent);
-            Log.d(TAG, "Changed alarm to new interval " + TimeUnit.MILLISECONDS.toHours(intervalMillis) + " h");
-        } else {
-            Log.d(TAG, "Automatic update was deactivated");
-        }
-    }
-
-    /**
-     * Sets time of day the feeds are refreshed automatically
-     */
-    private static void restartUpdateTimeOfDayAlarm(int hoursOfDay, int minute) {
-        Log.d(TAG, "Restarting update alarm.");
-        AlarmManager alarmManager = (AlarmManager) context.getSystemService(Context.ALARM_SERVICE);
-        PendingIntent updateIntent = PendingIntent.getBroadcast(context, 0,
-                new Intent(context, FeedUpdateReceiver.class), 0);
-        alarmManager.cancel(updateIntent);
-
-        Calendar now = Calendar.getInstance();
-        Calendar alarm = (Calendar)now.clone();
-        alarm.set(Calendar.HOUR_OF_DAY, hoursOfDay);
-        alarm.set(Calendar.MINUTE, minute);
-        if (alarm.before(now) || alarm.equals(now)) {
-            alarm.add(Calendar.DATE, 1);
-        }
-        Log.d(TAG, "Alarm set for: " + alarm.toString() + " : " + alarm.getTimeInMillis());
-        alarmManager.set(AlarmManager.RTC_WAKEUP,
-                alarm.getTimeInMillis(),
-                updateIntent);
-        Log.d(TAG, "Changed alarm to new time of day " + hoursOfDay + ":" + minute);
     }
 
     /**
@@ -838,5 +802,9 @@ public class UserPreferences {
      */
     public static boolean isCastEnabled() {
         return prefs.getBoolean(PREF_CAST_ENABLED, false);
+    }
+
+    public enum VideoBackgroundBehavior {
+        STOP, PICTURE_IN_PICTURE, CONTINUE_PLAYING
     }
 }

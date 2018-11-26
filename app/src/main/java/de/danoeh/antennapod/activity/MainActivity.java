@@ -30,6 +30,9 @@ import android.widget.ListView;
 
 import com.bumptech.glide.Glide;
 
+import de.danoeh.antennapod.core.event.ServiceEvent;
+import de.danoeh.antennapod.core.util.IntentUtils;
+import de.danoeh.antennapod.core.util.gui.NotificationUtils;
 import org.apache.commons.lang3.ArrayUtils;
 import org.apache.commons.lang3.Validate;
 
@@ -200,6 +203,8 @@ public class MainActivity extends CastEnabledActivity implements NavDrawerActivi
         transaction.commit();
 
         checkFirstLaunch();
+        NotificationUtils.createChannels(this);
+        UserPreferences.restartUpdateAlarm(false);
     }
 
     private void saveLastNavFragment(String tag) {
@@ -572,10 +577,29 @@ public class MainActivity extends CastEnabledActivity implements NavDrawerActivi
         Feed feed = navDrawerData.feeds.get(position - navAdapter.getSubscriptionOffset());
         switch(item.getItemId()) {
             case R.id.mark_all_seen_item:
-                DBWriter.markFeedSeen(feed.getId());
+                ConfirmationDialog markAllSeenConfirmationDialog = new ConfirmationDialog(this,
+                        R.string.mark_all_seen_label,
+                        R.string.mark_all_seen_confirmation_msg) {
+                    @Override
+                    public void onConfirmButtonPressed(DialogInterface dialog) {
+                        dialog.dismiss();
+                        DBWriter.markFeedSeen(feed.getId());
+                    }
+                };
+                markAllSeenConfirmationDialog.createNewDialog().show();
                 return true;
             case R.id.mark_all_read_item:
-                DBWriter.markFeedRead(feed.getId());
+                ConfirmationDialog markAllReadConfirmationDialog = new ConfirmationDialog(this,
+                        R.string.mark_all_read_label,
+                        R.string.mark_all_read_confirmation_msg) {
+
+                    @Override
+                    public void onConfirmButtonPressed(DialogInterface dialog) {
+                        dialog.dismiss();
+                        DBWriter.markFeedRead(feed.getId());
+                    }
+                };
+                markAllReadConfirmationDialog.createNewDialog().show();
                 return true;
             case R.id.rename_item:
                 new RenameFeedDialog(this, feed).show();
@@ -604,8 +628,7 @@ public class MainActivity extends CastEnabledActivity implements NavDrawerActivi
                             remover.skipOnCompletion = true;
                             int playerStatus = PlaybackPreferences.getCurrentPlayerStatus();
                             if(playerStatus == PlaybackPreferences.PLAYER_STATUS_PLAYING) {
-                                sendBroadcast(new Intent(
-                                        PlaybackService.ACTION_PAUSE_PLAY_CURRENT_EPISODE));
+                                IntentUtils.sendLocalBroadcast(MainActivity.this, PlaybackService.ACTION_PAUSE_PLAY_CURRENT_EPISODE);
                             }
                         }
                         remover.executeAsync();
@@ -718,6 +741,15 @@ public class MainActivity extends CastEnabledActivity implements NavDrawerActivi
             return;
         }
         loadData();
+    }
+
+    public void onEventMainThread(ServiceEvent event) {
+        Log.d(TAG, "onEvent(" + event + ")");
+        switch(event.action) {
+            case SERVICE_STARTED:
+                externalPlayerFragment.connectToPlaybackService();
+                break;
+        }
     }
 
     public void onEventMainThread(ProgressEvent event) {

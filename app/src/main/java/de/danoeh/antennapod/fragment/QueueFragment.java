@@ -21,7 +21,6 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.widget.ProgressBar;
 import android.widget.TextView;
-import android.widget.Toast;
 
 import com.yqritc.recyclerviewflexibledivider.HorizontalDividerItemDecoration;
 
@@ -46,7 +45,6 @@ import de.danoeh.antennapod.core.service.download.Downloader;
 import de.danoeh.antennapod.core.storage.DBReader;
 import de.danoeh.antennapod.core.storage.DBTasks;
 import de.danoeh.antennapod.core.storage.DBWriter;
-import de.danoeh.antennapod.core.storage.DownloadRequestException;
 import de.danoeh.antennapod.core.storage.DownloadRequester;
 import de.danoeh.antennapod.core.util.Converter;
 import de.danoeh.antennapod.core.util.FeedItemUtil;
@@ -327,6 +325,15 @@ public class QueueFragment extends Fragment {
                 case R.id.queue_sort_feed_title_desc:
                     QueueSorter.sort(getActivity(), QueueSorter.Rule.FEED_TITLE_DESC, true);
                     return true;
+                case R.id.queue_sort_random:
+                    QueueSorter.sort(getActivity(), QueueSorter.Rule.RANDOM, true);
+                    return true;
+                case R.id.queue_sort_smart_shuffle_asc:
+                    QueueSorter.sort(getActivity(), QueueSorter.Rule.SMART_SHUFFLE_ASC, true);
+                    return true;
+                case R.id.queue_sort_smart_shuffle_desc:
+                    QueueSorter.sort(getActivity(), QueueSorter.Rule.SMART_SHUFFLE_DESC, true);
+                    return true;
                 default:
                     return false;
             }
@@ -525,14 +532,18 @@ public class QueueFragment extends Fragment {
     private void refreshInfoBar() {
         String info = queue.size() + getString(R.string.episodes_suffix);
         if(queue.size() > 0) {
-            long duration = 0;
+            long timeLeft = 0;
+            float playbackSpeed = Float.valueOf(UserPreferences.getPlaybackSpeed());
             for(FeedItem item : queue) {
                 if(item.getMedia() != null) {
-                    duration += item.getMedia().getDuration();
+                    timeLeft +=
+                            (item.getMedia().getDuration() - item.getMedia().getPosition())
+                                    / playbackSpeed;
                 }
             }
             info += " \u2022 ";
-            info += Converter.getDurationStringLocalized(getActivity(), duration);
+            info += getString(R.string.time_left_label);
+            info += Converter.getDurationStringLocalized(getActivity(), timeLeft);
         }
         infoBar.setText(info);
     }

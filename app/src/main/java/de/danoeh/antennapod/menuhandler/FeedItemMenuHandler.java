@@ -17,6 +17,7 @@ import de.danoeh.antennapod.core.preferences.UserPreferences;
 import de.danoeh.antennapod.core.service.playback.PlaybackService;
 import de.danoeh.antennapod.core.storage.DBTasks;
 import de.danoeh.antennapod.core.storage.DBWriter;
+import de.danoeh.antennapod.core.util.FeedItemUtil;
 import de.danoeh.antennapod.core.util.IntentUtils;
 import de.danoeh.antennapod.core.util.LongList;
 import de.danoeh.antennapod.core.util.ShareUtils;
@@ -86,7 +87,7 @@ public class FeedItemMenuHandler {
             mi.setItemVisibility(R.id.add_to_queue_item, false);
         }
 
-        if (!showExtendedMenu || selectedItem.getLink() == null) {
+        if (!showExtendedMenu || !ShareUtils.hasLinkToShare(selectedItem)) {
             mi.setItemVisibility(R.id.visit_website_item, false);
             mi.setItemVisibility(R.id.share_link_item, false);
             mi.setItemVisibility(R.id.share_link_with_position_item, false);
@@ -157,7 +158,7 @@ public class FeedItemMenuHandler {
                                             FeedItem selectedItem) {
         switch (menuItemId) {
             case R.id.skip_episode_item:
-                context.sendBroadcast(new Intent(PlaybackService.ACTION_SKIP_CURRENT_EPISODE));
+                IntentUtils.sendLocalBroadcast(context, PlaybackService.ACTION_SKIP_CURRENT_EPISODE);
                 break;
             case R.id.remove_item:
                 DBWriter.deleteFeedMediaOfItem(context, selectedItem.getMedia().getId());
@@ -216,7 +217,7 @@ public class FeedItemMenuHandler {
                 DBWriter.setFeedItemAutoDownload(selectedItem, false);
                 break;
             case R.id.visit_website_item:
-                Uri uri = Uri.parse(selectedItem.getLink());
+                Uri uri = Uri.parse(FeedItemUtil.getLinkWithFallback(selectedItem));
                 Intent intent = new Intent(Intent.ACTION_VIEW, uri);
                 if(IntentUtils.isCallable(context, intent)) {
                     context.startActivity(intent);

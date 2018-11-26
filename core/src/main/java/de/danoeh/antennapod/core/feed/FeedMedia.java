@@ -19,6 +19,7 @@ import de.danoeh.antennapod.core.gpoddernet.model.GpodnetEpisodeAction;
 import de.danoeh.antennapod.core.preferences.GpodnetPreferences;
 import de.danoeh.antennapod.core.preferences.PlaybackPreferences;
 import de.danoeh.antennapod.core.preferences.UserPreferences;
+import de.danoeh.antennapod.core.service.playback.PlaybackService;
 import de.danoeh.antennapod.core.storage.DBReader;
 import de.danoeh.antennapod.core.storage.DBTasks;
 import de.danoeh.antennapod.core.storage.DBWriter;
@@ -218,7 +219,7 @@ public class FeedMedia extends FeedFile implements Playable {
      * currently being played and the current player status is playing.
      */
     public boolean isCurrentlyPlaying() {
-        return isPlaying() &&
+        return isPlaying() && PlaybackService.isRunning &&
                 ((PlaybackPreferences.getCurrentPlayerStatus() == PlaybackPreferences.PLAYER_STATUS_PLAYING));
     }
 
@@ -554,15 +555,9 @@ public class FeedMedia extends FeedFile implements Playable {
     public Callable<String> loadShownotes() {
         return () -> {
             if (item == null) {
-                item = DBReader.getFeedItem(
-                        itemID);
+                item = DBReader.getFeedItem(itemID);
             }
-            if (item.getContentEncoded() == null || item.getDescription() == null) {
-                DBReader.loadExtraInformationOfFeedItem(
-                        item);
-
-            }
-            return (item.getContentEncoded() != null) ? item.getContentEncoded() : item.getDescription();
+            return item.loadShownotes().call();
         };
     }
 
