@@ -45,7 +45,7 @@ public class GpodnetService {
 
     private static final String TAG = "GpodnetService";
 
-    private static final String BASE_SCHEME = "https";
+    private static final String BASE_SCHEME = "http";
 
     public static final String DEFAULT_BASE_HOST = "gpodder.net";
     private final String BASE_HOST;
